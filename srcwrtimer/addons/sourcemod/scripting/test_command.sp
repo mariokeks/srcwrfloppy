@@ -10,7 +10,7 @@ bool gB_Profiling;
 
 public void OnPluginStart()
 {
-	RegAdminCmd("sm_testload", Command_PlayReplayFile, ADMFLAG_RCON, "Start a replay from file. Usage: sm_playreplayfile <path>");
+	RegAdminCmd("sm_testload", Command_PlayReplayFile, ADMFLAG_RCON, "Loads a replay file, prints load time and thread-block time. Usage: sm_testload <path>");
 
 	gB_FloppyAsyncLoad = (GetFeatureStatus(FeatureType_Native, "SRCWRFloppy_AsyncLoadReplayFrames") == FeatureStatus_Available);
 }

@@ -106,15 +106,18 @@ native void SRCWRFloppy_AsyncLoadReplayFrames(ReplayFramesLoadedCallback callbac
  * Convenience stock that reads the replay header synchronously, then loads all frames (and optional footer extra-frames) asynchronously. 
  * For non-final-format replays the frames are loaded synchronously via LoadReplayCache instead.
  * The callback receives the parsed header and a fully-populated frame_cache_t.
- * NOTE: Make sure the replay's map, style & track match what you expect.
+ * NOTE: Make sure the replay's map, style & track match what you expect or you use the optional style, track & mapname parameters.
  *
  * @param callback          Function to call when loading completes.
  * @param data              Arbitrary value forwarded to the callback.
  * @param path              Path to the replay file.
  * @param force_sync        True to force loading sync, false otherwise.
+ * @param style             Expected replay style, -1 to accept any style.
+ * @param track             Expected replay track, -1 to accept any track.
+ * @param mapname           Expected map name (case-insensitive), leave empty to accept any map.
  * @noreturn
  */
-stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any data, const char[] path, bool force_sync = false)
+stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any data, const char[] path, bool force_sync = false, int style = -1, int track = -1, const char[] mapname = "")
 {
 	// Read header to get the required info 
 	replay_header_t aHeader;
@@ -137,6 +140,20 @@ stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any dat
 	{
 		delete hFile;
 		LogError("Replay version %d is newer than supported subversion %d. '%s'", aHeader.iReplayVersion, REPLAY_FORMAT_SUBVERSION, path);
+
+		frame_cache_t aCache; // empty cache
+		Call_StartFunction(INVALID_HANDLE, callback);
+		Call_PushCell(false);
+		Call_PushCell(data);
+		Call_PushArray(aCache, sizeof(aCache));
+		Call_PushArray(aHeader, sizeof(aHeader));
+		Call_Finish();
+		return;
+	}
+
+	if((style != -1 && style != aHeader.iStyle) || (track != -1 && track != aHeader.iTrack) || (mapname[0] != '\0' && !StrEqual(mapname, aHeader.sMap, false)))
+	{
+		delete hFile;
 
 		frame_cache_t aCache; // empty cache
 		Call_StartFunction(INVALID_HANDLE, callback);
