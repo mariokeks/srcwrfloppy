@@ -128,12 +128,7 @@ stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any dat
 		LogError("Cannot read replay header. '%s'", path);
 
 		frame_cache_t aCache; // empty cache
-		Call_StartFunction(INVALID_HANDLE, callback);
-		Call_PushCell(false);
-		Call_PushCell(data);
-		Call_PushArray(aCache, sizeof(aCache));
-		Call_PushArray(aHeader, sizeof(aHeader));
-		Call_Finish();
+		SRCWRFloppy_LoadReplayCache_StartFunction(callback, false, data, aCache, aHeader);
 		return;
 	}
 
@@ -143,12 +138,7 @@ stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any dat
 		LogError("Replay version %d is newer than supported subversion %d. '%s'", aHeader.iReplayVersion, REPLAY_FORMAT_SUBVERSION, path);
 
 		frame_cache_t aCache; // empty cache
-		Call_StartFunction(INVALID_HANDLE, callback);
-		Call_PushCell(false);
-		Call_PushCell(data);
-		Call_PushArray(aCache, sizeof(aCache));
-		Call_PushArray(aHeader, sizeof(aHeader));
-		Call_Finish();
+		SRCWRFloppy_LoadReplayCache_StartFunction(callback, false, data, aCache, aHeader);
 		return;
 	}
 
@@ -157,12 +147,7 @@ stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any dat
 		delete hFile;
 
 		frame_cache_t aCache; // empty cache
-		Call_StartFunction(INVALID_HANDLE, callback);
-		Call_PushCell(false);
-		Call_PushCell(data);
-		Call_PushArray(aCache, sizeof(aCache));
-		Call_PushArray(aHeader, sizeof(aHeader));
-		Call_Finish();
+		SRCWRFloppy_LoadReplayCache_StartFunction(callback, false, data, aCache, aHeader);
 		return;
 	}
 
@@ -179,12 +164,7 @@ stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any dat
 		frame_cache_t aCache;
 		bool bSuccess = LoadReplayCache(aCache, aHeader.iStyle, aHeader.iTrack, path, aHeader.sMap);
 
-		Call_StartFunction(INVALID_HANDLE, callback);
-		Call_PushCell(bSuccess);
-		Call_PushCell(data);
-		Call_PushArray(aCache, sizeof(aCache));
-		Call_PushArray(aHeader, sizeof(aHeader));
-		Call_Finish();
+		SRCWRFloppy_LoadReplayCache_StartFunction(callback, bSuccess, data, aCache, aHeader);
 		return;
 	}
 
@@ -266,11 +246,16 @@ static void SRCWRFloppy_LoadReplayCache_Callback(bool loaded, any data)
 		FormatEx(aCache.sReplayName, sizeof(aCache.sReplayName), "[U:1:%u]", aCache.iSteamID);
 	}
 
+	SRCWRFloppy_LoadReplayCache_StartFunction(callback, loaded, callback_data, aCache, aHeader);
+}
+
+static void SRCWRFloppy_LoadReplayCache_StartFunction(Function callback, bool loaded, any callback_data, frame_cache_t cache, replay_header_t header)
+{
 	Call_StartFunction(INVALID_HANDLE, callback);
 	Call_PushCell(loaded);
 	Call_PushCell(callback_data);
-	Call_PushArray(aCache, sizeof(aCache));
-	Call_PushArray(aHeader, sizeof(aHeader));
+	Call_PushArray(cache, sizeof(cache));
+	Call_PushArray(header, sizeof(header));
 	Call_Finish();
 }
 
