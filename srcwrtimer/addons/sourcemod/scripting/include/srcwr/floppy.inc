@@ -120,6 +120,7 @@ native void SRCWRFloppy_AsyncLoadReplayFrames(ReplayFramesLoadedCallback callbac
 stock void SRCWRFloppy_LoadReplayCache(LoadReplayCacheCallback callback, any data, const char[] path, bool force_sync = false, int style = -1, int track = -1, const char[] mapname = "")
 {
 	// Read header to get the required info 
+	// TODO replace with ReadReplayHeaderAsync (ReadFileAsync) in SM 1.13? https://github.com/alliedmodders/sourcemod/pull/2524
 	replay_header_t aHeader;
 	File hFile = ReadReplayHeader(path, aHeader);
 	if(hFile == null)
