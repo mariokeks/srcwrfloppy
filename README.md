@@ -8,9 +8,9 @@ This is a fork of [srcwr/srcwrfloppy](https://github.com/srcwr/srcwrfloppy), a S
 
 - **`SRCWRFloppy_AsyncLoadReplayFrames`** - asynchronously loads replay frames from a file on a background thread, without blocking the game thread.
 - **`SRCWRFloppy_LoadReplayCache`** - a stock to simplify `SRCWRFloppy_AsyncLoadReplayFrames` and replace the original `LoadReplayCache` that supports asynchronous & synchronous loading depending on the replay or extension itself. It reads the replay header synchronously and then loads all frames asynchronously (falls back to synchrounous `LoadReplayCache` for older replays or if forced).
-- **`SRCWRFloppy_AsyncSaveReplayEx`** - and some optional parameters in `SRCWRFloppy_AsyncLoadReplayFrames` are custom made for our replays version to include additional replay data and can be ignored.
+- **`SRCWRFloppy_AsyncSaveReplayEx`** - and some optional parameters in `SRCWRFloppy_AsyncLoadReplayFrames` are custom made for our replay version to include additional replay data and can be ignored.
 
-**Note:** the changes to the Rust extension in this fork are AI generated. The SourcePawn include and the public API are hand-reviewed.
+>**Note:** the changes to the Rust extension in this fork are AI generated. The SourcePawn include and the public API are hand-reviewed.
 
 ## Installing
 
