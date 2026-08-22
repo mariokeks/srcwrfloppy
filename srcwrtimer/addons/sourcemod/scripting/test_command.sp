@@ -1,10 +1,12 @@
 #include <profiler>
 
+#undef REQUIRE_PLUGIN
 #include <shavit/replay-playback>	
 
 #undef REQUIRE_EXTENSIONS
 #include <srcwr/floppy>
 
+bool gB_ReplayPlayback;
 bool gB_FloppyAsyncLoad;
 bool gB_Profiling;
 
@@ -12,6 +14,7 @@ public void OnPluginStart()
 {
 	RegAdminCmd("sm_testload", Command_PlayReplayFile, ADMFLAG_RCON, "Loads a replay file, prints load time and thread-block time. Usage: sm_testload <path>");
 
+	gB_ReplayPlayback = LibraryExists("shavit-replay-playback");
 	gB_FloppyAsyncLoad = (GetFeatureStatus(FeatureType_Native, "SRCWRFloppy_AsyncLoadReplayFrames") == FeatureStatus_Available);
 }
 
@@ -21,6 +24,10 @@ public void OnLibraryAdded(const char[] name)
 	{
 		gB_FloppyAsyncLoad = (GetFeatureStatus(FeatureType_Native, "SRCWRFloppy_AsyncLoadReplayFrames") == FeatureStatus_Available);
 	}
+	else if(strcmp(name, "shavit-replay-playback") == 0)
+	{
+		gB_ReplayPlayback = true;
+	}
 }
 
 public void OnLibraryRemoved(const char[] name)
@@ -28,6 +35,10 @@ public void OnLibraryRemoved(const char[] name)
 	if(strcmp(name, "srcwr💾") == 0)
 	{
 		gB_FloppyAsyncLoad = false;
+	}
+	else if(strcmp(name, "shavit-replay-playback") == 0)
+	{
+		gB_ReplayPlayback = false;
 	}
 }
 
@@ -126,7 +137,7 @@ void ReplayLoaded_Callback(bool loaded, DataPack data, frame_cache_t cache, repl
 		return;
 	}
 
-	if(Shavit_StartReplayFromFrameCache(header.iStyle, header.iTrack, -1.0, client, -1, Replay_Dynamic, false, cache) == 0)
+	if(gB_ReplayPlayback && Shavit_StartReplayFromFrameCache(header.iStyle, header.iTrack, -1.0, client, -1, Replay_Dynamic, false, cache) == 0)
 	{
 		PrintToChat(client, "Failed to create replay bot.");
 		return;
