@@ -43,21 +43,33 @@ typeset LoadReplayCacheCallback
 	/**
 	 * Called when SRCWRFloppy_LoadReplayCache has completed.
 	 *
-	 * @param loaded        True if frames were loaded successfully, false otherwise.
-	 * @param data          The value passed to SRCWRFloppy_LoadReplayCache.
-	 * @param cache         The replay frame cache. May contain partially or zeroed data on failure.
+	 * @param loaded           True if frames were loaded successfully, false otherwise.
+	 * @param data             The value passed to SRCWRFloppy_LoadReplayCache.
+	 * @param cache            The replay frame cache. May contain partially or zeroed data on failure.
 	 */
 	function void (bool loaded, any data, frame_cache_t cache);
 	
 	/**
 	 * Called when SRCWRFloppy_LoadReplayCache has completed.
 	 *
-	 * @param loaded        True if frames were loaded successfully, false otherwise.
-	 * @param data          The value passed to SRCWRFloppy_LoadReplayCache.
-	 * @param cache         The replay frame cache. May contain partially or zeroed data on failure.
-	 * @param header        The parsed replay header. May contain partially or zeroed data on failure.
+	 * @param loaded           True if frames were loaded successfully, false otherwise.
+	 * @param data             The value passed to SRCWRFloppy_LoadReplayCache.
+	 * @param cache            The replay frame cache. May contain partially or zeroed data on failure.
+	 * @param header           The parsed replay header. May contain partially or zeroed data on failure.
 	 */
 	function void (bool loaded, any data, frame_cache_t cache, replay_header_t header);	
+	
+	/**
+	 * Called when SRCWRFloppy_LoadReplayCache has completed.
+	 *
+	 * @param loaded           True if frames were loaded successfully, false otherwise.
+	 * @param data             The value passed to SRCWRFloppy_LoadReplayCache.
+	 * @param cache            The replay frame cache. May contain partially or zeroed data on failure.
+	 * @param header           The parsed replay header. May contain partially or zeroed data on failure.
+	 * @param footerVersion    The parsed footer version. 0 if footer is not available.
+	 * @param extraFrameCount  The parsed extra frame count. 0 if footer is not available.
+	 */
+	function void (bool loaded, any data, frame_cache_t cache, replay_header_t header, int footerVersion, int extraFrameCount);	
 }
 
 /**
@@ -234,14 +246,14 @@ static void ReadReplayHeader_Callback(bool success, DataPack data, const char[] 
 #endif
 }
 
-static void LoadReplayFrames(Function callback, any data, const char[] path, replay_header_t header, int lastModified, int frameOffset, int extraFrameOffset = 0, int extraFrameCells = 0, int extraFrameCount = 0)
+static void LoadReplayFrames(Function callback, any data, const char[] path, replay_header_t header, int lastModified, int frameOffset, int extraFrameOffset = 0, int footerVersion = 0, int extraFrameCells = 0, int extraFrameCount = 0)
 {
 	int iFrameCells = GetReplayCellSize(header.iReplayVersion);
 	int iFrameCount = header.iFrameCount + header.iPreFrames + header.iPostFrames;
 	ArrayList aFrames = new ArrayList(iFrameCells, iFrameCount); 
 
 	ArrayList aExtraFrames;
-	if(extraFrameCells > 0)
+	if(footerVersion > 0)
 	{
 		aExtraFrames = new ArrayList(extraFrameCells, extraFrameCount); 
 	}
@@ -252,6 +264,8 @@ static void LoadReplayFrames(Function callback, any data, const char[] path, rep
 	hPack.WriteCellArray(header, sizeof(replay_header_t));
 	hPack.WriteCell(aFrames);
 	hPack.WriteCell(aExtraFrames);
+	hPack.WriteCell(footerVersion);
+	hPack.WriteCell(extraFrameCount);
 	hPack.WriteCell(lastModified);
 
 	SRCWRFloppy_AsyncLoadReplayFrames(
@@ -271,6 +285,8 @@ static void SRCWRFloppy_LoadReplayCache_Callback(bool loaded, any data)
 	hPack.ReadCellArray(aHeader, sizeof(replay_header_t));
 	ArrayList aFrames = view_as<ArrayList>(hPack.ReadCell());
 	ArrayList aExtraFrames = view_as<ArrayList>(hPack.ReadCell());
+	int iFooterVersion = hPack.ReadCell();
+	int iExtraFrameCount = hPack.ReadCell();
 #if defined REPLAY_FOOTER_FORMAT
 	int iLastChange = hPack.ReadCell();
 #endif 
@@ -303,33 +319,18 @@ static void SRCWRFloppy_LoadReplayCache_Callback(bool loaded, any data)
 		FormatEx(aCache.sReplayName, sizeof(aCache.sReplayName), "[U:1:%u]", aCache.iSteamID);
 	}
 
-	SRCWRFloppy_LoadReplayCache_StartFunction(callback, loaded, callback_data, aCache, aHeader);
+	SRCWRFloppy_LoadReplayCache_StartFunction(callback, loaded, callback_data, aCache, aHeader, iFooterVersion, iExtraFrameCount);
 }
 
-/*
-static void GetFooterData(ArrayList &extraFrames, int &extraFrameOffset, int &extraFrameCells, int &extraFrameCount)
-{
-#if defined REPLAY_FOOTER_FORMAT
-	// Try to read optional footer
-	int iFooterVersion;
-	int iFooterOffset = iFrameOffset + iFrameCount * iFrameCells * 4;
-	bool bFooter = ReadReplayFooterHeader(hFile, iFooterOffset, iFooterVersion, extraFrameCount, extraFrameOffset);
-
-	extraFrameCells = bFooter ? GetReplayFooterCellSize(iFooterVersion) : 0; // cellsize inferred from subversion
-
-	// Create the ArrayList's with a startsize equal to the total frame count
-	extraFrames  = bFooter ? new ArrayList(extraFrameCells, extraFrameCount) : null;
-#endif
-}
-*/
-
-static void SRCWRFloppy_LoadReplayCache_StartFunction(Function callback, bool loaded, any callback_data, frame_cache_t cache, replay_header_t header)
+static void SRCWRFloppy_LoadReplayCache_StartFunction(Function callback, bool loaded, any callback_data, frame_cache_t cache, replay_header_t header, int footerVersion = 0, int extraFrameCount = 0)
 {
 	Call_StartFunction(INVALID_HANDLE, callback);
 	Call_PushCell(loaded);
 	Call_PushCell(callback_data);
 	Call_PushArray(cache, sizeof(cache));
 	Call_PushArray(header, sizeof(header));
+	Call_PushCell(footerVersion);
+	Call_PushCell(extraFrameCount);
 	Call_Finish();
 }
 
@@ -638,9 +639,9 @@ static void ReadReplayFooterHeader_Callback(bool success, DataPack data, const c
 		return;
 	}
 
-	int iExtraFrameCells = iFooterVersion ? GetReplayFooterCellSize(iFooterVersion) : 0; // cellsize inferred from subversion
+	int iExtraFrameCells = iFooterVersion ? GetReplayFooterCellSize(iFooterVersion) : 0;
 
-	LoadReplayFrames(callback, callback_data, sPath, aHeader, lastModified, iFrameOffset, iExtraFrameOffset, iExtraFrameCells, iExtraFrameCount);
+	LoadReplayFrames(callback, callback_data, sPath, aHeader, lastModified, iFrameOffset, iExtraFrameOffset, iFooterVersion, iExtraFrameCells, iExtraFrameCount);
 }
 #else
 // Cells per replay frame for a given replay version
