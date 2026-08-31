@@ -16,3 +16,6 @@
 *.so
 *.pdb
 *.zip
+
+# Editor files
+.vscode/
