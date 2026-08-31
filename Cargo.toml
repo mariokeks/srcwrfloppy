@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "4.0.0-fork-mariokeks-1.0"
+version = "4.0.0-fork-mariokeks-1.1"
 edition = "2024"
 homepage = "https://github.com/mariokeks/srcwrfloppy"
 repository = "https://github.com/mariokeks/srcwrfloppy"
