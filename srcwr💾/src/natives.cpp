@@ -49,6 +49,14 @@ void rust_post_load_to_replay_thread(
 	, int extracount
 );
 
+void rust_post_read_file_to_thread(
+	  IChangeableForward* forward // what to pass along to the callback
+	, int value // what to pass along to the callback
+	, const char* path
+	, int offset
+	, int size // <= 0 means "read to end of file starting at offset"
+);
+
 }
 
 
@@ -253,9 +261,52 @@ static cell_t N_SRCWRFloppy_AsyncLoadReplayFrames(IPluginContext* ctx, const cel
 	return 0; // native marked as void so return value doesn't matter...
 }
 
+static cell_t N_SRCWRFloppy_ReadFileAsync(IPluginContext* ctx, const cell_t* params)
+{
+	int p = 1;
+	cell_t callback = params[p++];
+	int value = params[p++];
+
+	char* path;
+	(void)ctx->LocalToString(params[p++], &path);
+
+	int offset = params[p++];
+	int size = params[p++];
+
+	IChangeableForward* fw = forwards->CreateForwardEx(
+		  NULL
+		, ET_Ignore
+		, 7
+		, NULL
+		, Param_Cell   // success
+		, Param_Any    // data
+		, Param_String // path
+		, Param_String // buffer (binary-safe; use bytesRead as the real length, not strlen)
+		, Param_Cell   // bytesRead
+		, Param_Cell   // totalFileSize
+		, Param_Cell   // lastModified
+	);
+	if (!fw || !fw->AddFunction(ctx, callback))
+	{
+		if (fw) forwards->ReleaseForward(fw);
+		return ctx->ThrowNativeError("Failed to create callback forward");
+	}
+
+	rust_post_read_file_to_thread(
+		  fw
+		, value
+		, path
+		, offset
+		, size
+	);
+
+	return 0; // native marked as void so return value doesn't matter...
+}
+
 extern const sp_nativeinfo_t FloppyNatives[] = {
 	{"SRCWRFloppy_AsyncSaveReplay", N_SRCWRFloppy_AsyncSaveReplay},
 	{"SRCWRFloppy_AsyncSaveReplayEx", N_SRCWRFloppy_AsyncSaveReplayEx},
 	{"SRCWRFloppy_AsyncLoadReplayFrames", N_SRCWRFloppy_AsyncLoadReplayFrames},
+	{"SRCWRFloppy_ReadFileAsync", N_SRCWRFloppy_ReadFileAsync},
 	{NULL, NULL}
 };

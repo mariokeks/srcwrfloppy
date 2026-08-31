@@ -23,6 +23,8 @@ use extshared::cpp_add_frame_action;
 use extshared::cpp_extension_log_error;
 use extshared::cpp_forward_execute;
 use extshared::cpp_forward_push_cell;
+use extshared::cpp_forward_push_string;
+use extshared::cpp_forward_push_string_ex;
 use extshared::cpp_forward_release;
 
 extshared::smext_conf_boilerplate_extension_info!(description, version, author, datestring, url, logtag, license, load);
@@ -36,6 +38,8 @@ static mut SENDER: Option<Sender<Msg>> = None;
 static mut THREAD: Option<JoinHandle<()>> = None;
 static mut LOAD_SENDER: Option<Sender<LoadMsg>> = None;
 static mut LOAD_THREAD: Option<JoinHandle<()>> = None;
+static mut READ_SENDER: Option<Sender<ReadMsg>> = None;
+static mut READ_THREAD: Option<JoinHandle<()>> = None;
 
 #[derive(Debug)]
 struct Msg {
@@ -78,6 +82,35 @@ struct Callbacker {
 }
 unsafe impl Send for Callbacker {} // so we can store the pointers...
 
+#[derive(Debug)]
+struct ReadMsg {
+	forward: NonNull<c_void>,
+	data:    i32,
+	// The path actually used for I/O (resolved to an absolute path).
+	path:         String,
+	// The original, unresolved path exactly as the caller passed it in --
+	// echoed back to the callback so callers can safely pass it along to
+	// other natives (e.g. SRCWRFloppy_AsyncLoadReplayFrames) without it
+	// getting resolved twice.
+	friendly_path: String,
+	offset:  u64,
+	// <= 0 means "read to end of file starting at offset"
+	size:    i64,
+}
+unsafe impl Send for ReadMsg {} // so we can store the pointers...
+
+struct ReadCallbacker {
+	forward:        NonNull<c_void>,
+	success:        bool,
+	path:           String,
+	buffer:         Vec<u8>,
+	bytesread:      i32,
+	totalfilesize:  i32,
+	lastmodified:   i32,
+	data:           i32,
+}
+unsafe impl Send for ReadCallbacker {} // so we can store the pointers...
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_setup_replay_thread() {
 	let (send, recv) = channel();
@@ -97,6 +130,14 @@ pub extern "C" fn rust_setup_replay_thread() {
 				.spawn(move || load_thread(load_recv))
 				.unwrap(),
 		);
+		let (read_send, read_recv) = channel();
+		READ_SENDER = Some(read_send);
+		READ_THREAD = Some(
+			std::thread::Builder::new()
+				.name("srcwrfloppy read thread".to_string())
+				.spawn(move || read_thread(read_recv))
+				.unwrap(),
+		);
 	}
 }
 
@@ -107,6 +148,8 @@ pub extern "C" fn rust_KILL_replay_thread() {
 		THREAD.take().unwrap().join().unwrap();
 		LOAD_SENDER = None; // closes channel
 		LOAD_THREAD.take().unwrap().join().unwrap();
+		READ_SENDER = None; // closes channel
+		READ_THREAD.take().unwrap().join().unwrap();
 	}
 }
 
@@ -339,6 +382,127 @@ fn load_thread(recv: Receiver<LoadMsg>) {
 				})) as *mut _ as *mut c_void,
 			);
 		}
+	}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_post_read_file_to_thread(
+	forward: NonNull<c_void>,
+	data: i32,
+	path: *const u8,
+	offset: i32,
+	size: i32,
+) {
+	// Keep the original, unresolved path around to hand back to the callback...
+	let friendly_path = unsafe { std::ffi::CStr::from_ptr(path as *const std::os::raw::c_char) }
+		.to_string_lossy()
+		.into_owned();
+	// ...but resolve relative to the game dir for the actual I/O, same as the other path-taking natives.
+	let path = extshared::build_path(path, extshared::PathType::Path_Game);
+
+	unsafe {
+		if let Some(sender) = &READ_SENDER {
+			sender
+				.send(ReadMsg {
+					forward,
+					data,
+					path,
+					friendly_path,
+					offset: offset.max(0) as u64,
+					size: size as i64,
+				})
+				.unwrap();
+		}
+	}
+}
+
+fn read_thread(recv: Receiver<ReadMsg>) {
+	while let Ok(msg) = recv.recv() {
+		let mut success = false;
+		let mut buffer = Vec::new();
+		let mut totalfilesize: i64 = 0;
+		let mut lastmodified: i32 = 0;
+
+		match std::fs::metadata(&msg.path) {
+			Ok(meta) => {
+				totalfilesize = meta.len() as i64;
+				if let Ok(modified) = meta.modified() {
+					if let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH) {
+						lastmodified = dur.as_secs() as i32;
+					}
+				}
+
+				match File::open(&msg.path) {
+					Ok(mut f) => {
+						if f.seek(SeekFrom::Start(msg.offset)).is_ok() {
+							// size <= 0 => read everything from offset to EOF.
+							let want = if msg.size <= 0 {
+								totalfilesize.saturating_sub(msg.offset as i64).max(0) as usize
+							} else {
+								msg.size as usize
+							};
+
+							let mut buf = vec![0u8; want];
+							match f.read(&mut buf) {
+								Ok(n) => {
+									buf.truncate(n);
+									buffer = buf;
+									success = true;
+								}
+								Err(_) => log_error(format!("Failed to read '{}'.", msg.path)),
+							}
+						} else {
+							log_error(format!("Failed to seek to offset {} in '{}'.", msg.offset, msg.path));
+						}
+					}
+					Err(_) => log_error(format!("Failed to open '{}' for reading.", msg.path)),
+				}
+			}
+			Err(_) => log_error(format!("Failed to stat '{}'; it may not exist.", msg.path)),
+		}
+
+		let bytesread = buffer.len() as i32;
+
+		unsafe {
+			cpp_add_frame_action(
+				do_read_callback,
+				Box::leak(Box::new(ReadCallbacker {
+					forward: msg.forward,
+					success,
+					path: msg.friendly_path,
+					buffer,
+					bytesread,
+					totalfilesize: totalfilesize as i32,
+					lastmodified,
+					data: msg.data,
+				})) as *mut _ as *mut c_void,
+			);
+		}
+	}
+}
+
+unsafe extern "C" fn do_read_callback(data: *mut c_void) {
+	unsafe {
+		let mut cb = Box::from_raw(data as *mut ReadCallbacker);
+
+		cpp_forward_push_cell(cb.forward, cb.success as i32);
+		cpp_forward_push_cell(cb.forward, cb.data);
+
+		cb.path.push('\0');
+		cpp_forward_push_string(cb.forward, cb.path.as_ptr());
+
+		// Binary-safe: pass the exact byte length instead of relying on a nul
+		// terminator, since file contents may legitimately contain '\0'.
+		let len = cb.buffer.len();
+		cb.buffer.push(0); // keep a trailing nul around for anything that insists on it
+		cpp_forward_push_string_ex(cb.forward, cb.buffer.as_mut_ptr(), len, extshared::STR_COPY | extshared::STR_BINARY, 0);
+
+		cpp_forward_push_cell(cb.forward, cb.bytesread);
+		cpp_forward_push_cell(cb.forward, cb.totalfilesize);
+		cpp_forward_push_cell(cb.forward, cb.lastmodified);
+
+		cpp_forward_execute(cb.forward, &mut 0);
+		cpp_forward_release(cb.forward);
 	}
 }
 

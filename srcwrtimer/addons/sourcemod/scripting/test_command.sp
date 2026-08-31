@@ -136,6 +136,9 @@ void ReplayLoaded_Callback(bool loaded, DataPack data, frame_cache_t cache, repl
 		PrintToChat(client, "Failed to load replay.");
 		return;
 	}
+	
+	// First load with the extension may take much longer
+	PrintToChat(client, "Loaded in %fs", fTimeTotal);
 
 	if(gB_ReplayPlayback && Shavit_StartReplayFromFrameCache(header.iStyle, header.iTrack, -1.0, client, -1, Replay_Dynamic, false, cache) == 0)
 	{
@@ -144,7 +147,4 @@ void ReplayLoaded_Callback(bool loaded, DataPack data, frame_cache_t cache, repl
 	}
 
 	delete cache.aFrames;
-	
-	// First load with the extension may take much longer
-	PrintToChat(client, "Loaded in %fs", fTimeTotal);
 }
