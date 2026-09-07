@@ -599,10 +599,12 @@ stock int SRCWRFloppy_ReadReplayFooterHeaderFromBuffer(const char[] buffer, int 
 
 static void MaybeReadFooter(Function callback, any data, const char[] path, replay_header_t header, int lastModified, int frameOffset, int totalFileSize)
 {
+	int iFooterHeaderSize = strlen(REPLAY_FOOTER_FORMAT) + 1;
 	int iFooterOffset = frameOffset + (header.iFrameCount + header.iPreFrames + header.iPostFrames) * GetReplayCellSize(header.iReplayVersion) * 4;
 
-	if(iFooterOffset >= totalFileSize)
-	{	
+	// Make sure we have at least enough space left to fit the REPLAY_FOOTER_FORMAT if not there cannot be a footer header
+	if(iFooterOffset + iFooterHeaderSize > totalFileSize)
+	{
 		LoadReplayFrames(callback, data, path, header, lastModified, frameOffset);
 	}
 	else
